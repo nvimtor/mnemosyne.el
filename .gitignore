@@ -1,0 +1,5 @@
+# direnv stuff
+.direnv
+
+# tools
+.aider*

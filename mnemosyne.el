@@ -1,0 +1,134 @@
+;; -*- lexical-binding: t; -*-
+
+(defcustom mnemosyne-audio-save-dir "~/Documents/"
+  "Directory to save audio recordings."
+  :type 'directory
+  :group 'mnemosyne)
+
+(defcustom mnemosyne-models-dir (expand-file-name "~/Projects/mnemosyne/models")
+  "Directory where whisper-cpp models are located."
+  :type 'directory
+  :group 'mnemosyne)
+
+(defcustom mnemosyne-model "ggml-medium.en.bin"
+  "Name of whisper-cpp model to use for transcription."
+  :type 'string
+  :group 'mnemosyne)
+
+(defcustom mnemosyne-audio-microphone "Dipper"
+  "Microphone device for audio recordings."
+  :type 'string
+  :group 'mnemosyne)
+
+(defcustom mnemosyne-whisper-args '()
+  "List of arguments for whisper-cpp."
+  :type 'alist
+  :group 'mnemosyne)
+
+(defun mnemosyne--do-applescript (command)
+  "Execute a small AppleScript COMMAND.
+Note: all quotes in the COMMAND string will be escaped.
+To say something, use:  (do-applescript \"say \\\"Hello\\\"\")"
+  (message "%S" command)
+  (shell-command
+   (format
+    "osascript -e \"%s\""
+    (replace-regexp-in-string "\"" "\\\\\"" command))))
+
+
+(defmacro mnemosyne--applescript-generate (as-form)
+  (cond ((and (consp as-form) (eq (car as-form) ':tell))
+         `(concat "\ntell " ,(cadr as-form)
+                  ,@(mapcar (lambda (stmt)
+                              `(mnemosyne--applescript-generate ,stmt))
+                            (cddr as-form))
+                  "\nend tell"))
+        ((stringp as-form)
+         `(concat "\n" ,as-form))
+        ((consp as-form)
+         `(concat "\n" ,as-form))
+        ((symbolp as-form)
+         `(concat "\n" ,as-form))
+        (t (error "Invalid form: %S" as-form))))
+
+(defun mnemosyne--create-filename ()
+  "Create a filename from the Org outline path and a timestamp."
+  (let* ((path (org-get-outline-path t))
+         (path-str (string-join path "_"))
+         (timestamp (format-time-string "%Y%m%d_%H%M%S")))
+    (concat path-str "_" timestamp)))
+
+(defun mnemosyne--start-recording ()
+  (interactive)
+  (let ((script (mnemosyne--applescript-generate
+                 (:tell "application \"QuickTime Player\""
+                        "set new_recording to new audio recording"
+                        (:tell "new_recording"
+                               (format "set microphone to \"%s\"" mnemosyne-audio-microphone))
+                        "start new_recording"))))
+    (mnemosyne--do-applescript script)))
+
+(defun mnemosyne--transcribe (filepath cb)
+  (async-start-process
+   "mnemosyne-transcribe"
+   "whisper-cli"
+   (lambda (result)
+      (funcall cb result))
+   "-m"
+   (concat mnemosyne-models-dir "/" mnemosyne-model)
+   "-f"
+   filepath
+   "-osrt"))
+
+(defun mnemosyne--stop-recording ()
+  (interactive)
+  (let* ((filename (mnemosyne--create-filename))
+         (filename-wav (concat filename ".wav"))
+         (save-path (expand-file-name filename-wav mnemosyne-audio-save-dir))
+         (temp-package (expand-file-name "temp.qtpxcomposition" mnemosyne-audio-save-dir))
+         (temp-m4a (expand-file-name "temp_audio.m4a" mnemosyne-audio-save-dir))
+         (script (mnemosyne--applescript-generate
+                  (:tell "application \"QuickTime Player\""
+                         "stop document \"Audio Recording\""
+                         (format
+                          "save document 1 in POSIX file \"%s\""
+                          temp-package)
+                         "close document 1"))))
+    (mnemosyne--do-applescript script)
+    (shell-command (format "mv \"%s/Audio Recording.m4a\" \"%s\"" temp-package temp-m4a))
+    (shell-command (format "/usr/bin/afconvert -f WAVE -d LEI16 \"%s\" \"%s\"" temp-m4a save-path))
+    (shell-command (format "rm \"%s\" && rm -rf \"%s\"" temp-m4a temp-package))
+    (mnemosyne--transcribe
+     save-path
+     (lambda (proc)
+       (let ((srt-path (concat save-path ".srt")))
+         (with-temp-buffer
+           (insert-file-contents srt-path)
+           (goto-char (point-max))  ; NOTE gptel reads all from above
+           (gptel-request
+               nil
+             :system "Summarize this transcript in bullet points."
+             :callback (lambda (response info)
+                         (when (stringp response)
+                           (kill-new response)
+                           (message "[mnemosyne] AI summary copied to kill-ring."))))))))))
+
+(defun mnemosyne--org-clock-in-action ()
+  (when (org-entry-get nil "MNEMOSYNE" t)
+    (mnemosyne--start-recording)))
+
+(defun mnemosyne--org-clock-out-action ()
+  (when (org-entry-get nil "MNEMOSYNE" t)
+    (mnemosyne--stop-recording)))
+
+(define-minor-mode mnemosyne-mode
+  "Description"
+  :init-value nil
+  :lighter "Mnemosyne"
+  :predicate (org-mode)
+  (if mnemosyne-mode
+      (progn
+        (add-hook 'org-clock-in-hook #'mnemosyne--org-clock-in-action)
+        (add-hook 'org-clock-out-hook #'mnemosyne--org-clock-out-action))
+    (remove-hook 'org-clock-in-hook #'mnemosyne--org-clock-in-action)
+    (remove-hook 'org-clock-out-hook #'mnemosyne--org-clock-out-action)))
