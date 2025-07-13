@@ -1,4 +1,34 @@
-;; -*- lexical-binding: t; -*-
+;;; mnemosyne.el --- Set of utilities for Harvest & org-mode interop -*- lexical-binding: t -*-
+
+;; Copyright (C) 2025  Vitor Leal
+
+;; Author: Vitor Leal <hello@vitorl.com>
+;; URL: https://github.com/nvimtor/mnemosyne.el
+;; Version: 0.1.0
+;; Package-Requires: ((emacs "25.1"))
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
+;;
+;; Emacs package to auto record, transcribe, and summarize system audio using whisper-cpp & gptel
+;;
+
+;;; Code:
+
 
 (defcustom mnemosyne-audio-save-dir "~/Documents/"
   "Directory to save audio recordings."
@@ -34,7 +64,6 @@ To say something, use:  (do-applescript \"say \\\"Hello\\\"\")"
    (format
     "osascript -e \"%s\""
     (replace-regexp-in-string "\"" "\\\\\"" command))))
-
 
 (defmacro mnemosyne--applescript-generate (as-form)
   (cond ((and (consp as-form) (eq (car as-form) ':tell))
@@ -132,3 +161,7 @@ To say something, use:  (do-applescript \"say \\\"Hello\\\"\")"
         (add-hook 'org-clock-out-hook #'mnemosyne--org-clock-out-action))
     (remove-hook 'org-clock-in-hook #'mnemosyne--org-clock-in-action)
     (remove-hook 'org-clock-out-hook #'mnemosyne--org-clock-out-action)))
+
+(provide 'mnemosyne)
+
+;;; mnemosyne.el ends here
