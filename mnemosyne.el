@@ -111,7 +111,9 @@ To say something, use:  (do-applescript \"say \\\"Hello\\\"\")"
 
 (defun mnemosyne--stop-recording ()
   (interactive)
-  (let* ((filename (mnemosyne--create-filename))
+  (let* ((orig-buf (current-buffer))
+         (orig-point (point))
+         (filename (mnemosyne--create-filename))
          (filename-wav (concat filename ".wav"))
          (save-path (expand-file-name filename-wav mnemosyne-audio-save-dir))
          (temp-package (expand-file-name "temp.qtpxcomposition" mnemosyne-audio-save-dir))
@@ -130,13 +132,19 @@ To say something, use:  (do-applescript \"say \\\"Hello\\\"\")"
     (mnemosyne--transcribe
      save-path
      (lambda (proc)
-       (let ((srt-path (concat save-path ".srt")))
-         (with-temp-buffer
-           (insert-file-contents srt-path)
-           (goto-char (point-max))  ; NOTE gptel reads all from above
+       (let ((srt-path (concat save-path ".srt"))
+             (gptel-use-context 'system))
+         (with-current-buffer orig-buf
+           (goto-char orig-point)
            (gptel-request
                nil
-             :system "Summarize this transcript in bullet points."
+             :system (concat
+                      "Generate a well-detailed report on this transcript. Identify open questions. Make use of MCP tools if you need, do not ask if you can use them, just use them.\n\n"
+                      "Transcript:"
+                      "\n```"
+                      (with-temp-buffer (insert-file-contents srt-path)
+                                        (buffer-string))
+                      "\n```")
              :callback (lambda (response info)
                          (when (stringp response)
                            (kill-new response)
@@ -150,6 +158,9 @@ To say something, use:  (do-applescript \"say \\\"Hello\\\"\")"
   (when (org-entry-get nil "MNEMOSYNE" t)
     (mnemosyne--stop-recording)))
 
+(defun mnemosyne--org-clock-out-advice (&rest _args)
+  (mnemosyne--org-clock-out-action))
+
 (define-minor-mode mnemosyne-mode
   "Description"
   :init-value nil
@@ -158,9 +169,9 @@ To say something, use:  (do-applescript \"say \\\"Hello\\\"\")"
   (if mnemosyne-mode
       (progn
         (add-hook 'org-clock-in-hook #'mnemosyne--org-clock-in-action)
-        (add-hook 'org-clock-out-hook #'mnemosyne--org-clock-out-action))
+        (advice-add 'org-clock-out :before #'mnemosyne--org-clock-out-action-advice))
     (remove-hook 'org-clock-in-hook #'mnemosyne--org-clock-in-action)
-    (remove-hook 'org-clock-out-hook #'mnemosyne--org-clock-out-action)))
+    (advice-remove 'org-clock-out #'mnemosyne--org-clock-out-action-advice)))
 
 (provide 'mnemosyne)
 
