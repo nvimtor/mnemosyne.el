@@ -164,7 +164,7 @@ To say something, use:  (do-applescript \"say \\\"Hello\\\"\")"
 (define-minor-mode mnemosyne-mode
   "Description"
   :init-value nil
-  :lighter "Mnemosyne"
+  :lighter " Mnemosyne"
   :predicate (org-mode)
   (if mnemosyne-mode
       (progn
